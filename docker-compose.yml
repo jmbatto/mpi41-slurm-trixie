@@ -26,8 +26,9 @@ services:
     security_opt:
       - no-new-privileges:true
     networks:
-      - mpinet
-
+      mpinet:
+        aliases:
+          - influxdb_local      
   # ---------------------------------------------------------------------------
   # Database Backend for Slurm Accounting
   # ---------------------------------------------------------------------------
@@ -87,8 +88,11 @@ services:
     cap_add:
       - CHOWN
       - DAC_OVERRIDE
+      - FOWNER
+      - FSETID
       - SETGID
       - SETUID
+      - SETPCAP
       - NET_BIND_SERVICE
     security_opt:
       - no-new-privileges:true
@@ -133,8 +137,11 @@ services:
     cap_add:
       - CHOWN
       - DAC_OVERRIDE
+      - FOWNER
+      - FSETID
       - SETGID
       - SETUID
+      - SETPCAP
       - KILL
       - NET_BIND_SERVICE
       - SYS_NICE
@@ -179,8 +186,11 @@ services:
     cap_add:
       - CHOWN
       - DAC_OVERRIDE
+      - FOWNER
+      - FSETID
       - SETGID
       - SETUID
+      - SETPCAP
       - KILL
       - NET_BIND_SERVICE
       - SYS_NICE
@@ -227,8 +237,11 @@ services:
     cap_add:
       - CHOWN
       - DAC_OVERRIDE
+      - FOWNER
+      - FSETID
       - SETGID
       - SETUID
+      - SETPCAP
       - KILL
       - NET_BIND_SERVICE
       - SYS_NICE
@@ -275,6 +288,5 @@ volumes:
   var_log_slurm:
   usrlocalvarmpi-foo:
   usrlocalworkproject:
-    external: true
   usrlocalgrafana-foo:
   usrlocalinfluxdb-foo:
