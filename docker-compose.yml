@@ -1,16 +1,10 @@
-version: "3.9"
+name: slurm-hpc
 
 # ==============================================================================
 # HPC Cluster Simulation Environment (Debian Trixie)
 # ==============================================================================
-# Architecture:
-# - Monitoring: InfluxDB + Grafana (Visualizing Telegraf metrics)
-# - Database: MariaDB (Backend for Slurm Accounting)
-# - Slurm Daemons: SlurmDBD (Database), SlurmCTLD (Controller)
-# - Compute Nodes: c1, c2 (Workers)
-#
-# Network:
-# All nodes communicate via 'mpinet' to allow MPI traffic and Slurm control messages.
+# Hardening: cap_drop ALL + no-new-privileges on every service.
+# Capabilities are added back only where the role needs them.
 # ==============================================================================
 
 services:
@@ -19,16 +13,18 @@ services:
   # ---------------------------------------------------------------------------
   grafana:
     container_name: influxdb_local
-    # Note: Consider splitting this into separate official images for production.
     image: philhawthorne/docker-influxdb-grafana:latest
     volumes:
-      - /var/run/docker.sock:/var/run/docker.sock
       - usrlocalinfluxdb-foo:/var/lib/influxdb
       - usrlocalgrafana-foo:/var/lib/grafana
     ports:
-      - "3003:3003" # Grafana
-      - "3004:8083" # Chronograf
-      - "8086:8086" # InfluxDB
+      - "3003:3003"
+      - "3004:8083"
+      - "8086:8086"
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
     networks:
       - mpinet
 
@@ -46,11 +42,17 @@ services:
       MARIADB_PASSWORD: password
     volumes:
       - var_lib_mysql:/var/lib/mysql
-    ports:
-      - "3306:3306"
+    cap_drop:
+      - ALL
+    cap_add:
+      - CHOWN
+      - DAC_OVERRIDE
+      - SETGID
+      - SETUID
+    security_opt:
+      - no-new-privileges:true
     networks:
       - mpinet
-    # Healthcheck ensures the DB is ready before SlurmDBD attempts connection.
     healthcheck:
       test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
       interval: 10s
@@ -65,14 +67,12 @@ services:
     container_name: slurmdbd
     hostname: slurmdbd
     volumes:
-      - /var/run/docker.sock:/var/run/docker.sock
       - etc_munge:/etc/munge
       - var_log_slurm:/var/log/slurm
     environment:
       - SLURMPARAM=slurmdbd
     expose:
       - "6819"
-    # Wait for MySQL to be fully operational
     depends_on:
       mysql:
         condition: service_healthy
@@ -82,8 +82,16 @@ services:
       timeout: 5s
       retries: 5
     shm_size: "512m"
-    # Secrets injection: Keys are mounted to a temporary location.
-    # The entrypoint script (Dockerfile) copies them to ~/.ssh and fixes permissions.
+    cap_drop:
+      - ALL
+    cap_add:
+      - CHOWN
+      - DAC_OVERRIDE
+      - SETGID
+      - SETUID
+      - NET_BIND_SERVICE
+    security_opt:
+      - no-new-privileges:true
     secrets:
       - source: "id_rsa"
         target: "/home/mpiuser/.ssh-source/id_rsa"
@@ -102,16 +110,15 @@ services:
     container_name: slurmctld
     hostname: slurmctld
     volumes:
-      - /var/run/docker.sock:/var/run/docker.sock
       - etc_munge:/etc/munge
       - slurm_jobdir:/data
       - var_log_slurm:/var/log/slurm
       - usrlocalvarmpi-foo:/usr/local/var/mpishare
+      - usrlocalworkproject:/work/project
     environment:
       - SLURMPARAM=slurmctld
     expose:
       - "6817"
-    # Controller starts only after the Database Daemon is healthy
     depends_on:
       slurmdbd:
         condition: service_healthy
@@ -121,6 +128,18 @@ services:
       timeout: 5s
       retries: 5
     shm_size: "512m"
+    cap_drop:
+      - ALL
+    cap_add:
+      - CHOWN
+      - DAC_OVERRIDE
+      - SETGID
+      - SETUID
+      - KILL
+      - NET_BIND_SERVICE
+      - SYS_NICE
+    security_opt:
+      - no-new-privileges:true
     secrets:
       - source: "id_rsa"
         target: "/home/mpiuser/.ssh-source/id_rsa"
@@ -139,12 +158,11 @@ services:
     hostname: c1
     container_name: c1
     volumes:
-      - /var/run/docker.sock:/var/run/docker.sock
       - etc_munge:/etc/munge
       - slurm_jobdir:/data
       - var_log_slurm:/var/log/slurm
-      # Shared storage for MPI jobs
       - usrlocalvarmpi-foo:/usr/local/var/mpishare
+      - usrlocalworkproject:/work/project
     environment:
       - SLURMPARAM=slurmd
     expose:
@@ -153,10 +171,23 @@ services:
       slurmctld:
         condition: service_healthy
     shm_size: "512m"
-    # Unlocking memory limits is often required for OpenMPI/Infiniband emulation
     ulimits:
       memlock: -1
       stack: 67108864
+    cap_drop:
+      - ALL
+    cap_add:
+      - CHOWN
+      - DAC_OVERRIDE
+      - SETGID
+      - SETUID
+      - KILL
+      - NET_BIND_SERVICE
+      - SYS_NICE
+      - SYS_PTRACE
+      - IPC_LOCK
+    security_opt:
+      - no-new-privileges:true
     secrets:
       - source: "id_rsa"
         target: "/home/mpiuser/.ssh-source/id_rsa"
@@ -175,11 +206,11 @@ services:
     hostname: c2
     container_name: c2
     volumes:
-      - /var/run/docker.sock:/var/run/docker.sock
       - etc_munge:/etc/munge
       - slurm_jobdir:/data
       - var_log_slurm:/var/log/slurm
       - usrlocalvarmpi-foo:/usr/local/var/mpishare
+      - usrlocalworkproject:/work/project
     environment:
       - SLURMPARAM=slurmd
     expose:
@@ -191,6 +222,20 @@ services:
     ulimits:
       memlock: -1
       stack: 67108864
+    cap_drop:
+      - ALL
+    cap_add:
+      - CHOWN
+      - DAC_OVERRIDE
+      - SETGID
+      - SETUID
+      - KILL
+      - NET_BIND_SERVICE
+      - SYS_NICE
+      - SYS_PTRACE
+      - IPC_LOCK
+    security_opt:
+      - no-new-privileges:true
     secrets:
       - source: "id_rsa"
         target: "/home/mpiuser/.ssh-source/id_rsa"
@@ -204,7 +249,6 @@ services:
 # ==============================================================================
 # Secrets Configuration
 # ==============================================================================
-# Ensure these files exist locally in the ./ssh/ directory before building.
 secrets:
   id_rsa_mpi_pub:
     file: ssh/id_rsa.mpi.pub
@@ -218,8 +262,6 @@ secrets:
 # ==============================================================================
 networks:
   mpinet:
-    # Use 'bridge' for local docker-compose usage.
-    # Switch to 'overlay' and 'external: true' if deploying to Docker Swarm.
     driver: bridge
     name: mpinet
 
@@ -227,10 +269,12 @@ networks:
 # Persistent Volumes
 # ==============================================================================
 volumes:
-  etc_munge:          # Shared authentication key
-  slurm_jobdir:       # Job data
-  var_lib_mysql:      # Database persistence
-  var_log_slurm:      # Logs
-  usrlocalvarmpi-foo: # NFS-like shared storage for MPI
+  etc_munge:
+  slurm_jobdir:
+  var_lib_mysql:
+  var_log_slurm:
+  usrlocalvarmpi-foo:
+  usrlocalworkproject:
+    external: true
   usrlocalgrafana-foo:
   usrlocalinfluxdb-foo:
