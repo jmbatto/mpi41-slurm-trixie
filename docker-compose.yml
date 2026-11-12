@@ -5,6 +5,7 @@ name: slurm-hpc
 # ==============================================================================
 # Hardening: cap_drop ALL + no-new-privileges on every service.
 # Capabilities are added back only where the role needs them.
+# MySQL is on a dedicated network. Only slurmdbd can reach it.
 # ==============================================================================
 
 services:
@@ -34,7 +35,8 @@ services:
     networks:
       mpinet:
         aliases:
-          - influxdb_local      
+          - influxdb_local
+
   # ---------------------------------------------------------------------------
   # Database Backend for Slurm Accounting
   # ---------------------------------------------------------------------------
@@ -59,7 +61,7 @@ services:
     security_opt:
       - no-new-privileges:true
     networks:
-      - mpinet
+      - dbnet
     healthcheck:
       test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
       interval: 10s
@@ -111,6 +113,7 @@ services:
         target: "/home/mpiuser/.ssh-source/authorized_keys"
     networks:
       - mpinet
+      - dbnet
 
   # ---------------------------------------------------------------------------
   # Slurm Controller (Head Node)
@@ -283,6 +286,10 @@ networks:
   mpinet:
     driver: bridge
     name: mpinet
+  dbnet:
+    driver: bridge
+    name: slurm-hpc_dbnet
+    internal: true
 
 # ==============================================================================
 # Persistent Volumes
